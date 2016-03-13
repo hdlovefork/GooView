@@ -15,8 +15,10 @@
         <com.dean.gooview.ui.GooView
             android:layout_centerInParent="true"
             android:id="@+id/gv_goo"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
             />
     </RelativeLayout>
 

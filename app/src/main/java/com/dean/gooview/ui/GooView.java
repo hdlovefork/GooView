@@ -4,6 +4,8 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.ColorStateList;
+import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -11,6 +13,7 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.PointF;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.AnimationDrawable;
 import android.os.Handler;
 import android.support.v4.view.MotionEventCompat;
@@ -27,6 +30,7 @@ import android.view.WindowManager;
 import android.view.animation.OvershootInterpolator;
 import android.widget.ImageView;
 
+import com.dean.gooview.R;
 import com.dean.gooview.utils.GeometryUtil;
 
 /**
@@ -34,16 +38,16 @@ import com.dean.gooview.utils.GeometryUtil;
  */
 public class GooView extends View {
     //原始点的默认半径
-    static final float RADIUS_ORIGIN_CIRCLE = 24f;
+    static final float RADIUS_ORIGIN_CIRCLE = 12f;
     //拖拽点的默认半径
-    static final float RADIUS_DRAG_CIRCLE = 24f;
+    static final float RADIUS_DRAG_CIRCLE = 12f;
     //允许拖拽的默认距离
     static final float DRAG_DISTANCE = 100f;
     //控制拖拽圆是否绘制
     static final float INVALID_VALUE = Integer.MAX_VALUE;
     private static final String TAG = "GooView";
     //默认的文字大小
-    private static final float TEXT_SIZE = 24;
+    private static final int TEXT_DEFAULT_SIZE = 12;
     //用于在整个屏幕中添加一个消失动画
     private final WindowManager mWm;
     private final WindowManager.LayoutParams mParams;
@@ -100,12 +104,13 @@ public class GooView extends View {
     /**
      * 绘制文本的画笔
      */
-    private Paint mTextPaint;
+    private TextPaint mTextPaint;
     /**
      * 显示的文本
      */
     private String mText;
     private boolean mDragging;
+    private int mCurTextColor = Color.WHITE;
 
     /**
      * 获取文本颜色
@@ -113,7 +118,7 @@ public class GooView extends View {
      * @return
      */
     public int getTextColor() {
-        return mTextColor;
+        return mCurTextColor;
     }
 
     /**
@@ -122,10 +127,27 @@ public class GooView extends View {
      * @param textColor
      */
     public void setTextColor(int textColor) {
-        mTextColor = textColor;
-        mTextPaint.setColor(textColor);
-        ViewCompat.postInvalidateOnAnimation(this);
+        mTextColor = ColorStateList.valueOf(textColor);
+        updateTextColors();
     }
+
+    public void setTextColor(ColorStateList colors) {
+        if (colors == null) {
+            throw new NullPointerException();
+        }
+
+        mTextColor = colors;
+        updateTextColors();
+    }
+
+    private void updateTextColors() {
+        int color = mTextColor.getColorForState(getDrawableState(), 0);
+        if (color != mCurTextColor) {
+            mCurTextColor = color;
+            ViewCompat.postInvalidateOnAnimation(this);
+        }
+    }
+
 
     /**
      * 获取文本大小
@@ -150,7 +172,7 @@ public class GooView extends View {
     /**
      * 显示的文本颜色
      */
-    private int mTextColor;
+    private ColorStateList mTextColor;
     /**
      * 显示的文本大小
      */
@@ -199,8 +221,6 @@ public class GooView extends View {
         mCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         mCirclePaint.setColor(Color.RED);
         mTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        mTextPaint.setColor(Color.WHITE);
-        mTextPaint.setTextSize(TEXT_SIZE);
         mTextPaint.setTextAlign(Paint.Align.CENTER);
         mOriginCenterPt = new PointF();
         mDragCenterPt = new PointF(INVALID_VALUE, INVALID_VALUE);
@@ -209,12 +229,93 @@ public class GooView extends View {
         mWm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
         mParams = new WindowManager.LayoutParams();
         mParams.format = PixelFormat.TRANSLUCENT;
+
+        /*
+         * Look the appearance up without checking first if it exists because
+         * almost every TextView has one and it greatly simplifies the logic
+         * to be able to parse the appearance first and then let specific tags
+         * for this View override it.
+         */
+        ColorStateList textColor = null;
+        int textSize = TEXT_DEFAULT_SIZE;
+        String fontFamily = null;
+        int styleIndex = -1;
+
+        TypedArray appearance = context.obtainStyledAttributes(
+                attrs, R.styleable.TextAppearance, 0, 0);
+        if (appearance != null) {
+            int n = appearance.getIndexCount();
+            for (int i = 0; i < n; i++) {
+                int index = appearance.getIndex(i);
+                if (index < 0 && index >= R.styleable.TextAppearance.length) {
+                    continue;
+                }
+                int attr = R.styleable.TextAppearance[index];
+                switch (attr) {
+                    case android.R.attr.textColor:
+                        textColor = appearance.getColorStateList(index);
+                        break;
+                    case android.R.attr.textSize:
+                        textSize = appearance.getDimensionPixelSize(index, textSize);
+                        break;
+                    case android.R.attr.textStyle:
+                        styleIndex = appearance.getInt(index, -1);
+                        break;
+                }
+            }
+            setTextColor(textColor != null ? textColor : ColorStateList.valueOf(0xFF000000));
+            setTypefaceFromAttrs(fontFamily, styleIndex);
+            mTextPaint.setTextSize(textSize);
+            appearance.recycle();
+        }
+
+    }
+
+    public void setTypeface(Typeface tf, int style) {
+        if (style > 0) {
+            if (tf == null) {
+                tf = Typeface.defaultFromStyle(style);
+            } else {
+                tf = Typeface.create(tf, style);
+            }
+
+            setTypeface(tf);
+            // now compute what (if any) algorithmic styling is needed
+            int typefaceStyle = tf != null ? tf.getStyle() : 0;
+            int need = style & ~typefaceStyle;
+            mTextPaint.setFakeBoldText((need & Typeface.BOLD) != 0);
+            mTextPaint.setTextSkewX((need & Typeface.ITALIC) != 0 ? -0.25f : 0);
+        } else {
+            mTextPaint.setFakeBoldText(false);
+            mTextPaint.setTextSkewX(0);
+            setTypeface(tf);
+        }
+    }
+
+    public void setTypeface(Typeface tf) {
+        if (mTextPaint.getTypeface() != tf) {
+            mTextPaint.setTypeface(tf);
+            ViewCompat.postInvalidateOnAnimation(this);
+        }
+    }
+
+    private void setTypefaceFromAttrs(String familyName, int styleIndex) {
+        Typeface tf = null;
+        if (familyName != null) {
+            tf = Typeface.create(familyName, styleIndex);
+            if (tf != null) {
+                setTypeface(tf);
+                return;
+            }
+        }
+        setTypeface(tf, styleIndex);
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        //控件大小为半径的2倍大小
-        setMeasuredDimension((int) mOriginRadius * 2, (int) mOriginRadius * 2);
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        //确保绘制的原始圆能完整的显示，所以这里取宽高的最小值，然后除以2作为半径
+        mDragRadius = mOriginRadius = Math.min(getMeasuredWidth(), getMeasuredHeight()) / 2;
     }
 
     @Override
@@ -234,20 +335,7 @@ public class GooView extends View {
         canvas.drawCircle(mOriginCenterPt.x, mOriginCenterPt.y, tmpRadius, mCirclePaint);
 
         if (mDragCenterPt.equals(INVALID_VALUE, INVALID_VALUE)) {
-            //没有拖拽时绘制文本
-            if (!TextUtils.isEmpty(mText)) {
-                // 计算Baseline绘制的起点X轴坐标 ，计算方式：画布宽度的一半，因为画笔已经设置了文本居中对齐
-                int baseX = mWidth / 2;
-                // 计算Baseline绘制的Y坐标 ，计算方式：画布高度的一半 - 文字总高度的一半
-                float v = (mTextPaint.descent() + mTextPaint
-                        .ascent()) / 2;
-                Log.d(TAG, "v:" + v);
-                int baseY = (int) ((mHeight / 2) - ((mTextPaint.descent() + mTextPaint
-                        .ascent()) / 2));
-
-                // 居中画一个文字
-                canvas.drawText(mText, baseX, baseY, mTextPaint);
-            }
+            drawText(canvas);//绘制文本
             return;
         }
         //计算用于绘制贝塞尔路径的4个点坐标，每个圆2个，这2个点的连线会通过圆心
@@ -273,6 +361,36 @@ public class GooView extends View {
 
         //绘制拖拽圆
         canvas.drawCircle(mDragCenterPt.x, mDragCenterPt.y, mDragRadius, mCirclePaint);
+    }
+
+    /**
+     * 绘制文本
+     *
+     * @param canvas
+     */
+    private void drawText(Canvas canvas) {
+        //没有拖拽时绘制文本
+        if (!TextUtils.isEmpty(mText)) {
+            // 计算Baseline绘制的起点X轴坐标 ，计算方式：画布宽度的一半，因为画笔已经设置了文本居中对齐
+            mTextPaint.setColor(mCurTextColor);
+            mTextPaint.drawableState = getDrawableState();
+            int baseX = mWidth / 2;
+            // 计算Baseline绘制的Y坐标 ，计算方式：画布高度的一半 - 文字总高度的一半
+            int baseY = (int) ((mHeight / 2) - ((mTextPaint.descent() + mTextPaint
+                    .ascent()) / 2));
+
+            // 居中画一个文字
+            canvas.drawText(mText, baseX, baseY, mTextPaint);
+        }
+    }
+
+
+    @Override
+    protected void drawableStateChanged() {
+        super.drawableStateChanged();
+        if (mTextColor != null && mTextColor.isStateful()) {
+            updateTextColors();
+        }
     }
 
     /**
