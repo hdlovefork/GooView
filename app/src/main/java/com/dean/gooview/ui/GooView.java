@@ -33,6 +33,7 @@ import android.widget.ImageView;
 import com.dean.gooview.R;
 import com.dean.gooview.utils.GeometryUtil;
 
+
 /**
  * Created by Administrator on 2016/3/10.
  */
@@ -46,8 +47,10 @@ public class GooView extends View {
     //控制拖拽圆是否绘制
     static final float INVALID_VALUE = Integer.MAX_VALUE;
     private static final String TAG = "GooView";
-    //默认的文字大小
+    //默认的文字大小、颜色、样式
     private static final int TEXT_DEFAULT_SIZE = 12;
+    private static final int TEXT_DEFAULT_COLOR = Color.WHITE;
+    private static final int TEXT_DEFAULT_STYLE = Typeface.BOLD;
     //用于在整个屏幕中添加一个消失动画
     private final WindowManager mWm;
     private final WindowManager.LayoutParams mParams;
@@ -112,6 +115,66 @@ public class GooView extends View {
     private boolean mDragging;
     private int mCurTextColor = Color.WHITE;
 
+    public GooView(Context context) {
+        this(context, null);
+    }
+
+    public GooView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        mCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        mCirclePaint.setColor(Color.RED);
+        mTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        mTextPaint.setTextAlign(Paint.Align.CENTER);
+        mOriginCenterPt = new PointF();
+        mDragCenterPt = new PointF(INVALID_VALUE, INVALID_VALUE);
+        mInvalidateRect = new Rect();
+        mPath = new Path();
+        mWm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        mParams = new WindowManager.LayoutParams();
+        mParams.format = PixelFormat.TRANSLUCENT;
+
+        /*
+         * Look the appearance up without checking first if it exists because
+         * almost every TextView has one and it greatly simplifies the logic
+         * to be able to parse the appearance first and then let specific tags
+         * for this View override it.
+         */
+        ColorStateList textColor = null;
+        int textSize = TEXT_DEFAULT_SIZE;
+        String fontFamily = null;
+        int styleIndex = TEXT_DEFAULT_STYLE;
+
+        TypedArray appearance = context.obtainStyledAttributes(
+                attrs, R.styleable.TextAppearance, 0, 0);
+        if (appearance != null) {
+            int n = appearance.getIndexCount();
+            for (int i = 0; i < n; i++) {
+                int index = appearance.getIndex(i);
+                if (index < 0 && index >= R.styleable.TextAppearance.length) {
+                    continue;
+                }
+                int attr = R.styleable.TextAppearance[index];
+                switch (attr) {
+                    case android.R.attr.textColor:
+                        textColor = appearance.getColorStateList(index);
+                        break;
+                    case android.R.attr.textSize:
+                        textSize = appearance.getDimensionPixelSize(index, textSize);
+                        break;
+                    case android.R.attr.textStyle:
+                        styleIndex = appearance.getInt(index, -1);
+                        break;
+                }
+            }
+            setTextColor(textColor != null ? textColor : ColorStateList
+                    .valueOf(TEXT_DEFAULT_COLOR));
+            setTypefaceFromAttrs(fontFamily, styleIndex);
+            mTextPaint.setTextSize(textSize);
+            appearance.recycle();
+        }
+
+    }
+
     /**
      * 获取文本颜色
      *
@@ -148,7 +211,6 @@ public class GooView extends View {
         }
     }
 
-
     /**
      * 获取文本大小
      *
@@ -168,6 +230,7 @@ public class GooView extends View {
         mTextPaint.setTextSize(textSize);
         ViewCompat.postInvalidateOnAnimation(this);
     }
+
 
     /**
      * 显示的文本颜色
@@ -212,64 +275,6 @@ public class GooView extends View {
      */
     private int mRemoveAnimationResId;
 
-    public GooView(Context context) {
-        this(context, null);
-    }
-
-    public GooView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        mCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        mCirclePaint.setColor(Color.RED);
-        mTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        mTextPaint.setTextAlign(Paint.Align.CENTER);
-        mOriginCenterPt = new PointF();
-        mDragCenterPt = new PointF(INVALID_VALUE, INVALID_VALUE);
-        mInvalidateRect = new Rect();
-        mPath = new Path();
-        mWm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
-        mParams = new WindowManager.LayoutParams();
-        mParams.format = PixelFormat.TRANSLUCENT;
-
-        /*
-         * Look the appearance up without checking first if it exists because
-         * almost every TextView has one and it greatly simplifies the logic
-         * to be able to parse the appearance first and then let specific tags
-         * for this View override it.
-         */
-        ColorStateList textColor = null;
-        int textSize = TEXT_DEFAULT_SIZE;
-        String fontFamily = null;
-        int styleIndex = -1;
-
-        TypedArray appearance = context.obtainStyledAttributes(
-                attrs, R.styleable.TextAppearance, 0, 0);
-        if (appearance != null) {
-            int n = appearance.getIndexCount();
-            for (int i = 0; i < n; i++) {
-                int index = appearance.getIndex(i);
-                if (index < 0 && index >= R.styleable.TextAppearance.length) {
-                    continue;
-                }
-                int attr = R.styleable.TextAppearance[index];
-                switch (attr) {
-                    case android.R.attr.textColor:
-                        textColor = appearance.getColorStateList(index);
-                        break;
-                    case android.R.attr.textSize:
-                        textSize = appearance.getDimensionPixelSize(index, textSize);
-                        break;
-                    case android.R.attr.textStyle:
-                        styleIndex = appearance.getInt(index, -1);
-                        break;
-                }
-            }
-            setTextColor(textColor != null ? textColor : ColorStateList.valueOf(0xFF000000));
-            setTypefaceFromAttrs(fontFamily, styleIndex);
-            mTextPaint.setTextSize(textSize);
-            appearance.recycle();
-        }
-
-    }
 
     public void setTypeface(Typeface tf, int style) {
         if (style > 0) {
@@ -449,6 +454,24 @@ public class GooView extends View {
 
     private OnStatusChangeListener mOnStatusChangeListener;
 
+    /**
+     * 以初始化状态绘制圆和文本内容
+     */
+    public void show() {
+        mIsRemove = false;
+        mIsOutOfRange = false;
+        mDragCenterPt.set(INVALID_VALUE, INVALID_VALUE);
+        ViewCompat.postInvalidateOnAnimation(this);
+    }
+
+    /**
+     * 隐藏圆和文本内容让他变得不可见，但它实际上占用了空间这不同于View.INVISIBLE 和 View.GONE
+     */
+    public void hide() {
+        mIsRemove = true;
+        ViewCompat.postInvalidateOnAnimation(this);
+    }
+
     public interface OnStatusChangeListener {
         /**
          * 没有拖出有效范围已经还原到原始位置
@@ -488,11 +511,14 @@ public class GooView extends View {
         float distance;
         switch (MotionEventCompat.getActionMasked(event)) {
             case MotionEvent.ACTION_DOWN:
-                if (!mIsRemove) {
-                    //刚刚按下时拖拽圆没有超出有效范围
-                    mIsOutOfRange = false;
-                    mDragging = false;
+                //已经销毁不再拦截事件
+                if (mIsRemove) {
+                    return false;
                 }
+                getParent().requestDisallowInterceptTouchEvent(true);
+                //刚刚按下时拖拽圆没有超出有效范围
+                mIsOutOfRange = false;
+                mDragging = false;
                 break;
             case MotionEvent.ACTION_MOVE:
                 mDragging = true;
@@ -511,6 +537,7 @@ public class GooView extends View {
                 }
                 break;
             case MotionEvent.ACTION_UP:
+                getParent().requestDisallowInterceptTouchEvent(false);
                 if (mIsOutOfRange) {
                     //之前拖拽超出了有效范围
                     distance = GeometryUtil
@@ -647,7 +674,9 @@ public class GooView extends View {
                 .postInvalidateOnAnimation(this, mInvalidateRect.left, mInvalidateRect.top, mInvalidateRect.right, mInvalidateRect.bottom);
     }
 
-    //让父控件允许我绘制的内容超出他的范围
+    /**
+     * 让父控件允许我绘制的内容超出他的范围
+     */
     private void supportDrawInParent() {
         View parent = (View) getParent();
         while (parent != null) {
@@ -661,6 +690,40 @@ public class GooView extends View {
                 break;
             }
             parent = (View) p.getParent();
+        }
+    }
+
+    @Override
+    public void setVisibility(int visibility) {
+        if (getVisibility() != visibility) {
+            //变得可见说明程序员想要他显示出来，所以设置mIsRemove为false
+            if (visibility == VISIBLE) {
+                mIsRemove = false;
+            }
+        }
+        super.setVisibility(visibility);
+    }
+
+    public static class SimpleOnStatusChangeListener implements OnStatusChangeListener {
+
+        @Override
+        public void onRestore(GooView gooView, boolean isOutOfRange) {
+
+        }
+
+        @Override
+        public void onRemove(GooView gooView) {
+
+        }
+
+        @Override
+        public void onDragging(GooView gooView, float x, float y) {
+
+        }
+
+        @Override
+        public void onClick(GooView gooView) {
+
         }
     }
 }
